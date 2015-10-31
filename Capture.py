@@ -56,3 +56,7 @@ class Capture():
             return 1
         except exc.SQLAlchemyError:
             return 0
+
+    def ips(self):
+        l=map(lambda w: w.ip, self.dbcapture.ips)
+        return l

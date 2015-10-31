@@ -44,3 +44,8 @@ class Preter(cmd.Cmd):
         else:
             for ts,buf in self.cap.pcap:
                 print self.cap.analyze_packet(buf)
+
+    def do_list_ips(self,line):
+        l=self.cap.ips()
+        for i in l:
+            print i
