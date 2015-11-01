@@ -12,12 +12,8 @@ class Preter(cmd.Cmd):
 
     def __init__(self):
         cmd.Cmd.__init__(self)
-        engine = create_engine('sqlite:///orm_in_detail.sqlite')
-        Session = sessionmaker()
-        Session.configure(bind=engine)
-        self.dbsession=Session()
-        Base.metadata.create_all(engine)
-
+        cmd.Cmd.prompt='>>>'
+        self.cap=Capture.Capture()
 
     def do_quit(self,line):
         return True
@@ -25,16 +21,22 @@ class Preter(cmd.Cmd):
 
     def do_open(self,fich):
 
-        self.cap=Capture.Capture(self.dbsession)
         cod=self.cap.open(fich)
         if cod==1:
             print "Capture successfully loaded."
         else:
             print "Error opening capture."
 
+    def help_open(self):
+        print 'opens a pcap file'
+        print 'Usage: open <file>'
+
     def do_ls(self,dire):
         l=listdir('.')
         print l
+
+    def help_ls(self):
+        print 'lists files in current directory'
 
     def do_analyze(self,cap):
         try:
@@ -45,7 +47,32 @@ class Preter(cmd.Cmd):
             for ts,buf in self.cap.pcap:
                 print self.cap.analyze_packet(buf)
 
+
+    def help_analyze(self):
+        print 'analyzes the current capture'
+
+
     def do_list_ips(self,line):
         l=self.cap.ips()
         for i in l:
             print i
+
+    def help_list_ips(self):
+        print 'lists IP addresses present in the current capture'
+
+    def do_list_captures(self,line):
+        caps=self.cap.captures()
+        for id,des in caps:
+            print str(id)+"\t:\t"+str(des)
+
+    def do_load_db(self,line):
+        l=line.split()
+        if len(l)==0:
+            print "*** need to provide a capture identifier (try list_captures)"
+            return
+        try:
+            cap_id=int(l[0])
+        except ValueError:
+            print "*** capture identifier should be an integer"
+            return
+        self.cap.load(cap_id)

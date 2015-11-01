@@ -1,6 +1,3 @@
-__author__ = 'nacho'
-
-
 from cap_model import *
 from sqlalchemy import exc
 
@@ -22,15 +19,16 @@ try:
     sess.add(ip1)
     sess.add(ip2)
 
-    #dbcapture.ips.append(ip1)
-    #dbcapture.ips.append(ip2)
-
     sess.flush()
     sess.commit()
 
-    ip3=ip(ip=u"2.3.4.5")
-    sess.add(ip3)
+    #ip3=ip(ip=u"2.3.4.5")
+    #sess.add(ip3)
     #dbcapture.ips.append(ip3)
+
+    conv=conversation(port=80,proto=u"tcp",capture_id=dbcapture.id,ipsrc_ip=ip1.ip,ipdst_ip=ip2.ip)
+    sess.add(conv)
+
     sess.flush()
     sess.commit()
 except exc.SQLAlchemyError:

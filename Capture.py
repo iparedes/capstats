@@ -2,21 +2,27 @@ __author__ = 'nacho'
 
 import dpkt
 import socket
-import cap_model
+#import cap_model
+from cap_model import *
 
-from sqlalchemy import exc
+from sqlalchemy import exc,MetaData,Table
 
 
 
 class Capture():
-    def __init__(self, dbsession):
-        self.dbsession = dbsession
+    def __init__(self):
+        engine = create_engine('sqlite:///orm_in_detail.sqlite')
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        self.dbsession=Session()
+        Base.metadata.create_all(engine)
 
     def open(self, fich):
         try:
             f = open(fich, "r")
             self.pcap = dpkt.pcap.Reader(f)
             self.npackets = len(list(self.pcap))
+
 
             self.dbcapture = cap_model.capture()
             self.dbsession.add(self.dbcapture)
@@ -57,6 +63,16 @@ class Capture():
         except exc.SQLAlchemyError:
             return 0
 
+    def captures(self):
+        caps=self.dbsession.query(capture).all()
+        captures=map(lambda c: (c.id,c.description), caps)
+        return captures
+
+
     def ips(self):
         l=map(lambda w: w.ip, self.dbcapture.ips)
         return l
+
+    def load(self,capid):
+        self.dbcapture=self.dbsession.query(capture).filter(capture.id==capid).all()[0]
+        pass

@@ -14,7 +14,7 @@ class capture (Base):
     id = Column('id', Integer, primary_key = True)
     description = deferred(Column('Description', Text))
     ips=relationship("ip",backref="capture")
-
+    conversations=relationship("conversation",backref="capture")
 
 
 class ip(Base):
@@ -23,5 +23,15 @@ class ip(Base):
     mac = Column('mac', Unicode)
     ip = Column('ip', Unicode,primary_key=True)
     capture_id=Column(Integer,ForeignKey('capture.id'),primary_key=True)
+    convsrc=relationship('conversation',backref=backref('ip'),primaryjoin="conversation.ipsrc_ip==ip.ip")
+    convdst=relationship('conversation',primaryjoin="conversation.ipdst_ip==ip.ip")
+
+class conversation(Base):
+    __tablename__="conversation"
+    port = Column('port',Integer,primary_key=True)
+    proto = Column('proto',Unicode,primary_key=True)
+    capture_id=Column(Integer,ForeignKey('capture.id'),primary_key=True)
+    ipsrc_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
+    ipdst_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
 
 
