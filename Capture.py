@@ -40,8 +40,8 @@ class Capture():
         if eth.type == dpkt.ethernet.ETH_TYPE_IP:
             # IP packet
             ip = eth.data
-            ipquad1 = socket.inet_ntoa(ip.src)
-            ipquad2 = socket.inet_ntoa(ip.dst)
+            ipquad1 = unicode(socket.inet_ntoa(ip.src))
+            ipquad2 = unicode(socket.inet_ntoa(ip.dst))
             if ip.p == dpkt.ip.IP_PROTO_TCP:
                 # TCP
                 tcp = ip.data
@@ -56,59 +56,46 @@ class Capture():
                     return "SYN"
                 else:
                     # Conversation started previous to the capture
-                    possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
-                                                  conversation.proto==u"tcp", \
-                                                  conversation.ipsrc_ip==ipquad2, \
-                                                  conversation.ipdst_ip==ipquad1, \
-                                                  conversation.port==port1).all()
-                    if len(possconv)==1:
-                        # found matching conversation
-                        possconv[0].packets+=1
-                        possconv[0].bytes+=packet_size
-                        self.dbsession.commit()
-                        return ">"
+                    (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"tcp")
+                    if (c=='?'):
+                        # Conversation not found
+                        self.orphanpackets.append(eth)
+                        return "Not added"
                     else:
-                        possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
-                                                  conversation.proto==u"tcp", \
-                                                  conversation.ipsrc_ip==ipquad1, \
-                                                  conversation.ipdst_ip==ipquad2, \
-                                                  conversation.port==port2).all()
-                        if len(possconv)==1:
-                            # found match in the other direction
-                            possconv[0].packets+=1
-                            possconv[0].bytes+=packet_size
-                            self.dbsession.commit()
-                            return "<"
-                        else:
-                            # Conversation not found
-                            self.orphanpackets.append(eth)
-                            return "Not added"
-
+                        conv.packets+=1
+                        conv.bytes+=packet_size
+                        self.dbsession.flush()
+                        self.dbsession.commit()
+                        return c
 
     def add_ip(self, ipa, mac=u""):
         """Adds an IP address to the current capture"""
-        try:
-            #exception while inserting IP means IP already inserted
+        if self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).count()>0:
+            # Already exists
+            return 0
+        else:
             ip1 = ip(ip=ipa, mac=mac, capture_id=self.dbcapture.id)
             self.dbsession.add(ip1)
-
             self.dbsession.flush()
             self.dbsession.commit()
             return 1
-        except exc.SQLAlchemyError:
-            return 0
+
 
     def add_conv(self,ips,ipd,proto,port,packet_size):
         """Adds a conversation to the current capture"""
-        try:
+        if self.dbsession.query(conversation).filter(conversation.ipsrc_ip==ips, conversation.ipdst_ip==ipd, \
+                                                     conversation.proto==proto, conversation.port==port, \
+                                                      conversation.capture_id==self.dbcapture.id).count()>0:
+            # Already exists
+            return 0
+        else:
             conv1=conversation(ipsrc_ip=ips,ipdst_ip=ipd,proto=proto,port=port, \
                                capture_id=self.dbcapture.id,packets=1,bytes=packet_size)
             self.dbsession.add(conv1)
             self.dbsession.flush()
             self.dbsession.commit()
             return 1
-        except exc.SQLAlchemyError:
-            return 0
+
 
 
     def captures(self):
@@ -124,3 +111,25 @@ class Capture():
     def load(self,capid):
         self.dbcapture=self.dbsession.query(capture).filter(capture.id==capid).all()[0]
         pass
+
+    def __match_conversation(self,ip1,port1,ip2,port2,proto):
+        possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
+                                      conversation.proto==proto, \
+                                      conversation.ipsrc_ip==ip2, \
+                                      conversation.ipdst_ip==ip1, \
+                                      conversation.port==port1).all()
+        if len(possconv)==1:
+            # found matching conversation
+            return ('>',possconv[0])
+        else:
+            possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
+                                      conversation.proto==proto, \
+                                      conversation.ipsrc_ip==ip1, \
+                                      conversation.ipdst_ip==ip2, \
+                                      conversation.port==port2).all()
+            if len(possconv)==1:
+                # found match in the other direction
+                return ('<',possconv[0])
+            else:
+                # Conversation not found
+                return ('?',None)
