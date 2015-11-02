@@ -37,4 +37,15 @@ class conversation(Base):
     ipsrc_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
     ipdst_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
 
+class endpoint(Base):
+    __tablename__="endpoint"
+    id=Column('id',Integer,primary_key=True)
+    ip=Column('ip',Unicode)
+    port=Column('port',Integer)
+    connsrc=relationship('connection',backref=backref('endpoint'),primaryjoin="connection.ipsrc_id==endpoint.id")
+    conndst=relationship('connection',primaryjoin="connection.ipdst_id==endpoint.id")
 
+class connection(Base):
+    __tablename__="connection"
+    ipsrc_id=Column(Integer,ForeignKey(endpoint.id),primary_key=True)
+    ipdst_id=Column(Integer,ForeignKey(endpoint.id),primary_key=True)

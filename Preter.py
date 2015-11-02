@@ -46,6 +46,8 @@ class Preter(cmd.Cmd):
         else:
             for ts,buf in self.cap.pcap:
                 print self.cap.analyze_packet(buf)
+        # OjO aqui
+        self.cap.dbsession.commit()
 
 
     def help_analyze(self):

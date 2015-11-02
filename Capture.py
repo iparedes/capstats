@@ -15,7 +15,8 @@ class Capture():
         Session = sessionmaker()
         Session.configure(bind=engine)
         self.dbsession=Session()
-        self.orphanpackets=[]
+        self.__orphan_packets=[]
+        self.__udp_packets=[]
         Base.metadata.create_all(engine)
 
     def open(self, fich):
@@ -59,7 +60,7 @@ class Capture():
                     (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"tcp")
                     if (c=='?'):
                         # Conversation not found
-                        self.orphanpackets.append(eth)
+                        self.__orphan_packets.append(eth)
                         return "Not added"
                     else:
                         conv.packets+=1
@@ -67,6 +68,16 @@ class Capture():
                         self.dbsession.flush()
                         self.dbsession.commit()
                         return c
+            elif ip.p==dpkt.ip.IP_PROTO_UDP:
+                # UDP
+                self.__udp_packets.append(eth)
+                udp=ip.data
+                port1=udp.sport
+                port2=udp.dport
+                id1=self.__add_endpoint(ipquad1,port1)
+                id2=self.__add_endpoint(ipquad2,port2)
+                conn=self.__add_connection(id1,id2)
+
 
     def add_ip(self, ipa, mac=u""):
         """Adds an IP address to the current capture"""
@@ -133,3 +144,22 @@ class Capture():
             else:
                 # Conversation not found
                 return ('?',None)
+
+    def __add_endpoint(self,ip,port):
+        a=self.dbsession.query(endpoint).filter(endpoint.ip==ip, endpoint.port==port).all()
+        if len(a)>0:
+            return a[0].id
+        else:
+            ep=endpoint(ip=ip,port=port)
+            self.dbsession.add(ep)
+            self.dbsession.flush()
+            return ep.id
+
+    def __add_connection(self,id1,id2):
+        if self.dbsession.query(connection).filter(connection.ipsrc_id==id1,connection.ipdst_id==id2).count()>0:
+            return 0
+        else:
+            co=connection(ipsrc_id=id1,ipdst_id=id2)
+            self.dbsession.add(co)
+            self.dbsession.flush()
+            return 1
