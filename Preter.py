@@ -12,7 +12,7 @@ class Preter(cmd.Cmd):
 
     def __init__(self):
         cmd.Cmd.__init__(self)
-        cmd.Cmd.prompt='>>>'
+        cmd.Cmd.prompt='>>> '
         self.cap=Capture.Capture()
 
     def do_quit(self,line):
@@ -62,8 +62,8 @@ class Preter(cmd.Cmd):
 
     def do_list_captures(self,line):
         caps=self.cap.captures()
-        for id,des in caps:
-            print str(id)+"\t:\t"+str(des)
+        for id,f,des in caps:
+            print str(id)+"\t("+f+"):\t"+str(des)
 
     def do_load_db(self,line):
         l=line.split()

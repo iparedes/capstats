@@ -12,6 +12,7 @@ Base=declarative_base()
 class capture (Base):
     __tablename__ = "capture"
     id = Column('id', Integer, primary_key = True)
+    filename=Column('filename',String)
     description = deferred(Column('Description', Text))
     ips=relationship("ip",backref="capture")
     conversations=relationship("conversation",backref="capture")
@@ -30,6 +31,8 @@ class conversation(Base):
     __tablename__="conversation"
     port = Column('port',Integer,primary_key=True)
     proto = Column('proto',Unicode,primary_key=True)
+    packets = Column('packets',Integer)
+    bytes = Column('bytes',Integer)
     capture_id=Column(Integer,ForeignKey('capture.id'),primary_key=True)
     ipsrc_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
     ipdst_ip=Column(Unicode,ForeignKey('ip.ip'),primary_key=True)
