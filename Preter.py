@@ -44,8 +44,12 @@ class Preter(cmd.Cmd):
         except Exception, e:
             return 0
         else:
+            cont=0
             for ts,buf in self.cap.pcap:
-                print self.cap.analyze_packet(buf)
+                r=self.cap.analyze_packet(buf)
+                cont+=1
+                a=str(cont)+"/"+str(self.cap.npackets)
+                print "{}\r".format(a),
         # OjO aqui
         self.cap.dbsession.commit()
 

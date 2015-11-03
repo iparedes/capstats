@@ -66,7 +66,7 @@ class Capture():
                         conv.packets+=1
                         conv.bytes+=packet_size
                         self.dbsession.flush()
-                        self.dbsession.commit()
+                        #self.dbsession.commit()
                         return c
             elif ip.p==dpkt.ip.IP_PROTO_UDP:
                 # UDP
@@ -88,7 +88,7 @@ class Capture():
             ip1 = ip(ip=ipa, mac=mac, capture_id=self.dbcapture.id)
             self.dbsession.add(ip1)
             self.dbsession.flush()
-            self.dbsession.commit()
+            #self.dbsession.commit()
             return 1
 
 
@@ -104,7 +104,7 @@ class Capture():
                                capture_id=self.dbcapture.id,packets=1,bytes=packet_size)
             self.dbsession.add(conv1)
             self.dbsession.flush()
-            self.dbsession.commit()
+            #self.dbsession.commit()
             return 1
 
 
