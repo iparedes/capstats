@@ -52,6 +52,7 @@ class Preter(cmd.Cmd):
                 print "{}\r".format(a),
         # OjO aqui
         self.cap.dbsession.commit()
+        print "Capture analyzed!"
 
 
     def help_analyze(self):

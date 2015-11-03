@@ -18,6 +18,7 @@ class Capture():
         self.__orphan_packets=[]
         self.__udp_packets=[]
         Base.metadata.create_all(engine)
+        self.__well_known_udp=(53,67,68,69,79,88,113,119,123,135,137,138,139,161,162)
 
     def open(self, fich):
         try:
@@ -54,7 +55,7 @@ class Capture():
                     self.add_ip(ipquad2)
                     self.add_conv(ipquad1,ipquad2,u"tcp",port2,packet_size)
                     #return ipquad1+","+ipquad2
-                    return "SYN"
+                    return "TCP"
                 else:
                     # Conversation started previous to the capture
                     (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"tcp")
@@ -70,42 +71,69 @@ class Capture():
                         return c
             elif ip.p==dpkt.ip.IP_PROTO_UDP:
                 # UDP
-                self.__udp_packets.append(eth)
+                #self.__udp_packets.append(eth)
                 udp=ip.data
                 port1=udp.sport
                 port2=udp.dport
-                id1=self.__add_endpoint(ipquad1,port1)
-                id2=self.__add_endpoint(ipquad2,port2)
-                conn=self.__add_connection(id1,id2)
+                (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"udp")
+                if c=='?':
+                    if (port1 in self.__well_known_udp):
+                        ips=ipquad2
+                        ipd=ipquad1
+                        port=port1
+                    elif (port2 in self.__well_known_udp):
+                        ips=ipquad1
+                        ipd=ipquad2
+                        port=port2
+                    else:
+                        self.__orphan_packets.append(eth)
+                        return "Not added"
+                    self.add_conv(ips,ipd,u"udp",port,packet_size)
+                    return "UDP"
+                else:
+                    conv.packets+=1
+                    conv.bytes+=packet_size
+                    self.dbsession.flush()
+                    return c
+
+                #id1=self.__add_endpoint(ipquad1,port1)
+                #id2=self.__add_endpoint(ipquad2,port2)
+                #conn=self.__add_connection(id1,id2)
 
 
     def add_ip(self, ipa, mac=u""):
         """Adds an IP address to the current capture"""
-        if self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).count()>0:
+        #if self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).count()>0:
+        a=self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).all()
+        if len(a)>0:
             # Already exists
-            return 0
+            return a[0]
         else:
             ip1 = ip(ip=ipa, mac=mac, capture_id=self.dbcapture.id)
             self.dbsession.add(ip1)
             self.dbsession.flush()
             #self.dbsession.commit()
-            return 1
+            return ip1
 
 
     def add_conv(self,ips,ipd,proto,port,packet_size):
         """Adds a conversation to the current capture"""
-        if self.dbsession.query(conversation).filter(conversation.ipsrc_ip==ips, conversation.ipdst_ip==ipd, \
+        #if self.dbsession.query(conversation).filter(conversation.ipsrc_ip==ips, conversation.ipdst_ip==ipd, \
+        #                                             conversation.proto==proto, conversation.port==port, \
+        #                                              conversation.capture_id==self.dbcapture.id).count()>0:
+        a=self.dbsession.query(conversation).filter(conversation.ipsrc_ip==ips, conversation.ipdst_ip==ipd, \
                                                      conversation.proto==proto, conversation.port==port, \
-                                                      conversation.capture_id==self.dbcapture.id).count()>0:
+                                                      conversation.capture_id==self.dbcapture.id).all()
+        if len(a)>0:
             # Already exists
-            return 0
+            return a[0]
         else:
             conv1=conversation(ipsrc_ip=ips,ipdst_ip=ipd,proto=proto,port=port, \
                                capture_id=self.dbcapture.id,packets=1,bytes=packet_size)
             self.dbsession.add(conv1)
             self.dbsession.flush()
             #self.dbsession.commit()
-            return 1
+            return conv1
 
 
 
