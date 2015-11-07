@@ -2,6 +2,8 @@ __author__ = 'nacho'
 
 import dpkt
 import socket
+import binascii
+import sys
 
 from cap_model import *
 
@@ -15,16 +17,17 @@ class Capture():
         Session = sessionmaker()
         Session.configure(bind=engine)
         self.dbsession=Session()
-        self.__orphan_packets=[]
+        self.orphan_packets=[]
         self.__udp_packets=[]
         Base.metadata.create_all(engine)
-        self.__well_known_udp=(53,67,68,69,79,88,113,119,123,135,137,138,139,161,162)
+        self.__well_known_udp=(53,67,69,79,88,113,119,123,135,137,138,139,161,162)
 
     def open(self, fich):
         try:
             f = open(fich, "r")
             self.pcap = dpkt.pcap.Reader(f)
             self.npackets = len(list(self.pcap))
+            self.processed_packets=0
 
 
             self.dbcapture = capture(filename=fich)
@@ -36,12 +39,17 @@ class Capture():
         except IOError:
             return 0
 
+
+
     def analyze_packet(self, buf):
         eth = dpkt.ethernet.Ethernet(buf)
+        self.processed_packets+=1
         packet_size=len(buf)
         if eth.type == dpkt.ethernet.ETH_TYPE_IP:
             # IP packet
             ip = eth.data
+            mac1=unicode(eth.src.encode('hex'))
+            mac2=unicode(eth.dst.encode('hex'))
             ipquad1 = unicode(socket.inet_ntoa(ip.src))
             ipquad2 = unicode(socket.inet_ntoa(ip.dst))
             if ip.p == dpkt.ip.IP_PROTO_TCP:
@@ -51,8 +59,8 @@ class Capture():
                 port2=tcp.dport
                 if ((tcp.flags & dpkt.tcp.TH_SYN) != 0) and ((tcp.flags & dpkt.tcp.TH_ACK) == 0):
                     # Start of 3-way handshake
-                    self.add_ip(ipquad1)
-                    self.add_ip(ipquad2)
+                    self.add_ip(ipquad1,mac1)
+                    self.add_ip(ipquad2,mac2)
                     self.add_conv(ipquad1,ipquad2,u"tcp",port2,packet_size)
                     #return ipquad1+","+ipquad2
                     return "TCP"
@@ -61,8 +69,14 @@ class Capture():
                     (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"tcp")
                     if (c=='?'):
                         # Conversation not found
-                        self.__orphan_packets.append(eth)
-                        return "Not added"
+                        if self.__is_multicast(ipquad2):
+                            # If multicast assume the destination as the server in the conversation
+                            ips=ipquad1
+                            ipd=ipquad2
+                            port=port2
+                        else:
+                            self.orphan_packets.append(buf)
+                            return "Not added"
                     else:
                         conv.packets+=1
                         conv.bytes+=packet_size
@@ -77,6 +91,7 @@ class Capture():
                 port2=udp.dport
                 (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"udp")
                 if c=='?':
+                    # New conversation
                     if (port1 in self.__well_known_udp):
                         ips=ipquad2
                         ipd=ipquad1
@@ -86,11 +101,18 @@ class Capture():
                         ipd=ipquad2
                         port=port2
                     else:
-                        self.__orphan_packets.append(eth)
-                        return "Not added"
+                        # Not identified protocol
+                        if self.__is_multicast(ipquad2):
+                            ips=ipquad1
+                            ipd=ipquad2
+                            port=port2
+                        else:
+                            self.orphan_packets.append(buf)
+                            return "Not added"
                     self.add_conv(ips,ipd,u"udp",port,packet_size)
                     return "UDP"
                 else:
+                    # Previously identified conversation
                     conv.packets+=1
                     conv.bytes+=packet_size
                     self.dbsession.flush()
@@ -100,8 +122,79 @@ class Capture():
                 #id2=self.__add_endpoint(ipquad2,port2)
                 #conn=self.__add_connection(id1,id2)
 
+    def analyze_orphans(self):
+        servers=self.servers()
+        lista=list(self.orphan_packets)
+        for buf in lista:
+            packet_size=len(buf)
+            eth=dpkt.ethernet.Ethernet(buf)
+            if eth.type == dpkt.ethernet.ETH_TYPE_IP:
+            # IP packet
+                ip = eth.data
+                mac1=unicode(eth.src.encode('hex'))
+                mac2=unicode(eth.dst.encode('hex'))
+                ipquad1 = unicode(socket.inet_ntoa(ip.src))
+                ipquad2 = unicode(socket.inet_ntoa(ip.dst))
+                if ip.p == dpkt.ip.IP_PROTO_TCP:
+                    # TCP
+                    tcp = ip.data
+                    port1=tcp.sport
+                    port2=tcp.dport
+                    (c,conv)=self.__match_conversation(ipquad1,port1,ipquad2,port2,u"tcp")
+                    if (c=='?'):
+                        #still orphan
+                        if (ipquad1,port1,u"tcp") in servers:
+                            self.add_conv(ipquad2,ipquad1,u"tcp",port1,packet_size)
+                            self.orphan_packets.remove(buf)
+                        elif (ipquad2,port2,u"tcp") in servers:
+                            self.add_conv(ipquad1,ipquad2,u"tcp",port2,packet_size)
+                            self.orphan_packets.remove(buf)
+                        else:
+                            # still missing
+                            a=1
+                            pass
+                    else:
+                        conv.packets+=1
+                        conv.bytes+=len(buf)
+                        self.dbsession.flush()
+                        self.orphan_packets.remove(buf)
+                else:
+                    # Not TCP
+                    a=2
+                    pass
+# La primera pasada anade a las conversaciones que ya existen
+# La segunda pasada debe identificar servidores y crear nuevas conversaciones basado en esto
 
-    def add_ip(self, ipa, mac=u""):
+    def count_orphan_ports(self):
+        self.orphan_tcps=dict()
+        self.orphan_udps=dict()
+        for buf in self.orphan_packets:
+            packet_size=len(buf)
+            eth=dpkt.ethernet.Ethernet(buf)
+            if eth.type == dpkt.ethernet.ETH_TYPE_IP:
+            # IP packet
+                ip = eth.data
+                data=ip.data
+                port1=data.sport
+                port2=data.dport
+                if ip.p == dpkt.ip.IP_PROTO_TCP:
+                    # TCP
+                    l=self.orphan_tcps
+                elif ip.p==dpkt.ip.IP_PROTO_UDP:
+                    l=self.orphan_udps
+                else:
+                    continue
+                if port1 in l:
+                    l[port1]+=1
+                else:
+                    l[port1]=1
+                if port2 in l:
+                    l[port2]+=1
+                else:
+                    l[port2]=1
+
+
+    def add_ip(self, ipa, mac):
         """Adds an IP address to the current capture"""
         #if self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).count()>0:
         a=self.dbsession.query(ip).filter(ip.ip==ipa,ip.capture_id==self.dbcapture.id).all()
@@ -135,6 +228,38 @@ class Capture():
             #self.dbsession.commit()
             return conv1
 
+    def servers(self):
+        p=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id).all()
+        servers=[]
+        for i in p:
+            servers.append((i.ipdst_ip,i.port,i.proto))
+        return servers
+
+
+
+    def orphans(self):
+        orphan_list=[]
+        self.odds=[]
+        for buf in self.orphan_packets:
+            i=dpkt.ethernet.Ethernet(buf)
+            if i.type == dpkt.ethernet.ETH_TYPE_IP:
+                # IP packet
+                ip = i.data
+                mac1=unicode(i.src.encode('hex'))
+                mac2=unicode(i.dst.encode('hex'))
+                ipquad1 = unicode(socket.inet_ntoa(ip.src))
+                ipquad2 = unicode(socket.inet_ntoa(ip.dst))
+                data= ip.data
+                port1=data.sport
+                port2=data.dport
+                orphan_list.append((mac1,ipquad1,port1,mac2,ipquad2,port2,ip.p))
+            else:
+                # Not ethernet. This should probably be in analyze_packet
+                self.odds.append(i)
+        return (orphan_list,self.odds)
+
+# Check if any of the IP:port corresponds to a conversation end (server)
+# Check if any of the IP is multicast -> sets conversation
 
 
     def captures(self):
@@ -151,6 +276,16 @@ class Capture():
         self.dbcapture=self.dbsession.query(capture).filter(capture.id==capid).all()[0]
         pass
 
+    def __is_multicast(self,quadip):
+        a=int(quadip.split('.')[0])
+        if a>=224 and a<=239:
+            return True
+        else:
+            return False
+
+
+
+
     def __match_conversation(self,ip1,port1,ip2,port2,proto):
         possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
                                       conversation.proto==proto, \
@@ -159,7 +294,7 @@ class Capture():
                                       conversation.port==port1).all()
         if len(possconv)==1:
             # found matching conversation
-            return ('>',possconv[0])
+            return ('<',possconv[0])
         else:
             possconv=self.dbsession.query(conversation).filter(conversation.capture_id==self.dbcapture.id, \
                                       conversation.proto==proto, \
@@ -168,7 +303,7 @@ class Capture():
                                       conversation.port==port2).all()
             if len(possconv)==1:
                 # found match in the other direction
-                return ('<',possconv[0])
+                return ('>',possconv[0])
             else:
                 # Conversation not found
                 return ('?',None)
@@ -191,3 +326,13 @@ class Capture():
             self.dbsession.add(co)
             self.dbsession.flush()
             return 1
+
+    def __add_colons_to_mac(self, mac_addr ) :
+        """This function accepts a 12 hex digit string and converts it to a colon separated string"""
+        s = list()
+        for i in range(12/2) : 	# mac_addr should always be 12 chars, we work in groups of 2 chars
+            s.append( mac_addr[i*2:i*2+2] )
+        r = ":".join(s)		# I know this looks strange, refer to http://docs.python.org/library/stdtypes.html#sequence-types-str-unicode-list-tuple-bytearray-buffer-xrange
+        return r
+
+
